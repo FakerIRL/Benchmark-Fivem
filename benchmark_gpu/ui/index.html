@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Benchmark GPU</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  width:100vw; height:100vh; overflow:hidden;
+  background:transparent;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  color: #FFE000;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hide { display:none !important; }
+
+/* ══════════════════════ HUD LIVE ══════════════════════ */
+#hud { position:fixed; inset:0; pointer-events:none; }
+
+#hud-stats {
+  position:absolute; top:14px; right:14px;
+  background: rgba(0,0,0,.72);
+  border-left: 2px solid #FFE000;
+  padding: 8px 12px;
+  display: flex; flex-direction:column; gap:4px;
+  min-width: 130px;
+}
+.hrow { display:flex; justify-content:space-between; gap:14px; align-items:baseline; }
+.hlbl { font-size:10px; color:rgba(255,224,0,.45); text-transform:uppercase; }
+.hval { font-size:17px; font-weight:bold; }
+.hu   { font-size:9px; opacity:.5; margin-left:1px; }
+
+#hud-prog {
+  position:absolute; bottom:14px; left:14px; right:14px;
+  background: rgba(0,0,0,.72);
+  border-left: 2px solid #FFE000;
+  padding: 8px 12px;
+}
+#hp-top { display:flex; justify-content:space-between; margin-bottom:6px; }
+#hp-label { font-size:10px; color:#FFE000; letter-spacing:1px; opacity:0; transition:opacity .3s; }
+#hp-label.on { opacity:1; }
+#hp-right { display:flex; gap:8px; font-size:9px; color:rgba(255,224,0,.5); }
+#hp-track { height:3px; background:rgba(255,224,0,.12); }
+#hp-fill  { height:100%; width:0%; background:#FFE000; transition:width .5s ease; }
+#hp-dots  { display:flex; gap:4px; margin-top:6px; }
+.hdot { flex:1; height:3px; background:rgba(255,224,0,.1); transition:background .3s; }
+.hdot.on   { background:#FFE000; }
+.hdot.done { background:rgba(255,224,0,.35); }
+
+/* ══════════════════════ COUNTDOWN ══════════════════════ */
+#countdown {
+  position:fixed; inset:0; background:#000;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:18px; pointer-events:none;
+}
+.cd-icons { display:flex; gap:18px; }
+.cd-icon  { font-size:42px; animation: pulse .75s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity:.35; transform:scale(.88); } to { opacity:1; transform:scale(1.1); } }
+#cd-title { font-size:24px; font-weight:bold; letter-spacing:12px; text-align:center; }
+#cd-sub   { font-size:9px;  letter-spacing:4px; color:rgba(255,224,0,.4); }
+#cd-num   { font-size:120px; font-weight:bold; line-height:1; transition:transform .12s; }
+#cd-num.pop { transform:scale(1.18); }
+#cd-warn  { font-size:9px; letter-spacing:3px; color:rgba(255,224,0,.28);
+  border-top:1px solid rgba(255,224,0,.1); padding-top:14px; }
+
+/* ══════════════════════ FENÊTRE RÉSULTATS ══════════════════════ */
+#win {
+  position:fixed;
+  top:50px; left:50%;
+  transform:translateX(-50%);
+  width:680px; min-width:400px; min-height:300px;
+  max-height: calc(100vh - 70px);
+  background:rgba(10,10,10,.96);
+  border:1px solid rgba(255,224,0,.25);
+  border-top:2px solid #FFE000;
+  display:flex; flex-direction:column;
+  pointer-events:all;
+  resize:both; overflow:hidden;
+  animation:winIn .4s ease;
+}
+@keyframes winIn { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+
+/* Barre de titre (drag handle) */
+#win-title {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 12px;
+  background:rgba(255,224,0,.06);
+  border-bottom:1px solid rgba(255,224,0,.15);
+  cursor:move; flex-shrink:0;
+}
+#win-title-text { font-size:10px; letter-spacing:4px; color:rgba(255,224,0,.6); }
+#win-close-btn {
+  font-size:13px; color:rgba(255,224,0,.5); cursor:pointer;
+  background:none; border:none; padding:0 4px; line-height:1;
+  transition:color .15s;
+}
+#win-close-btn:hover { color:#FFE000; }
+
+/* Onglets */
+#tabs {
+  display:flex; gap:0; flex-shrink:0;
+  border-bottom:1px solid rgba(255,224,0,.12);
+}
+.tab {
+  padding:7px 16px; font-size:10px; letter-spacing:2px;
+  color:rgba(255,224,0,.4); cursor:pointer;
+  border-bottom:2px solid transparent; transition:all .15s;
+  background:none; border-top:none; border-left:none; border-right:none;
+}
+.tab:hover { color:rgba(255,224,0,.7); }
+.tab.active { color:#FFE000; border-bottom-color:#FFE000; }
+
+/* Contenu des pages */
+#pages { flex:1; overflow-y:auto; min-height:0; }
+.page  { display:none; padding:16px; }
+.page.active { display:block; }
+
+/* Scrollbar */
+#pages::-webkit-scrollbar { width:6px; }
+#pages::-webkit-scrollbar-track { background:rgba(255,224,0,.05); }
+#pages::-webkit-scrollbar-thumb { background:rgba(255,224,0,.35); border-radius:3px; }
+#pages::-webkit-scrollbar-thumb:hover { background:rgba(255,224,0,.6); }
+
+/* ── PAGE 1 : SCORE ── */
+#p-score { display:flex; flex-direction:column; gap:14px; }
+
+.score-hero { display:flex; align-items:center; gap:24px; }
+.big-score  { font-size:80px; font-weight:bold; line-height:1; }
+.score-side { display:flex; flex-direction:column; gap:8px; flex:1; }
+.rating-big { font-size:28px; font-weight:bold; letter-spacing:4px; }
+.rating-lbl { font-size:9px; color:rgba(255,224,0,.35); letter-spacing:2px; }
+.bar-track  { height:8px; background:rgba(255,224,0,.08); border:1px solid rgba(255,224,0,.12); }
+.bar-fill   { height:100%; width:0%; background:#FFE000; transition:width 1.3s ease; }
+.bar-marks  { display:flex; justify-content:space-between;
+  font-size:8px; color:rgba(255,224,0,.2); margin-top:3px; }
+
+.kpi-row { display:flex; gap:1px; }
+.kpi     { flex:1; text-align:center; padding:10px 0;
+  background:rgba(255,224,0,.04); border:1px solid rgba(255,224,0,.1); }
+.kpi+.kpi { border-left:none; }
+.kpi-lbl  { font-size:8px; color:rgba(255,224,0,.35); letter-spacing:2px; margin-bottom:4px; }
+.kpi-val  { font-size:22px; font-weight:bold; }
+.kpi-u    { font-size:9px; opacity:.45; margin-left:2px; }
+
+.reco-box {
+  text-align:center; padding:10px;
+  background:rgba(255,224,0,.03); border:1px solid rgba(255,224,0,.1);
+  font-size:9px; color:rgba(255,224,0,.35); letter-spacing:2px;
+}
+.reco-box strong { font-size:14px; color:#FFE000; letter-spacing:3px; display:block; margin-top:4px; }
+
+/* ── PAGE 2 : COURBE ── */
+#p-curve { display:flex; flex-direction:column; gap:12px; }
+.curve-legend { display:flex; gap:14px; justify-content:flex-end; }
+.cl { display:flex; align-items:center; gap:5px; font-size:9px; color:rgba(255,224,0,.35); }
+.cl-dot { width:7px; height:7px; border-radius:50%; }
+#curve-svg { width:100%; display:block; overflow:visible; }
+
+/* ── PAGE 3 : ANALYSE ── */
+#p-analysis { display:flex; flex-direction:column; gap:10px; }
+.an-card {
+  padding:12px 14px;
+  background:rgba(255,224,0,.03);
+  border-left:2px solid rgba(255,224,0,.3);
+}
+.an-top  { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.an-icon { font-size:16px; }
+.an-lbl  { font-size:8px; letter-spacing:3px; color:rgba(255,224,0,.35); }
+.an-val  { font-size:13px; font-weight:bold; margin-bottom:3px; line-height:1.3; }
+.an-det  { font-size:10px; color:rgba(255,224,0,.5); line-height:1.5; }
+
+/* ── PAGE 4 : TABLEAU ── */
+#p-table { display:flex; flex-direction:column; gap:0; }
+.th {
+  display:flex; gap:6px; padding:5px 4px;
+  border-bottom:1px solid rgba(255,224,0,.15);
+  font-size:8px; color:rgba(255,224,0,.3); letter-spacing:2px;
+}
+.tr {
+  display:flex; gap:6px; align-items:center; padding:7px 4px;
+  border-bottom:1px solid rgba(255,224,0,.06);
+  animation:rowIn .2s ease both;
+}
+@keyframes rowIn { from { opacity:0; transform:translateX(-4px); } to { opacity:1; transform:translateX(0); } }
+.tr:hover { background:rgba(255,224,0,.03); }
+.tc-name  { flex:1; font-size:10px; color:rgba(255,224,0,.6); }
+.tc-cond  { width:120px; font-size:8px; color:rgba(255,224,0,.3);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tc-bar-w { width:80px; }
+.tc-bar   { height:3px; background:rgba(255,224,0,.1); }
+.tc-bar-f { height:100%; background:#FFE000; transition:width 1s ease; }
+.tc-avg   { width:44px; text-align:right; font-weight:bold; font-size:12px; }
+.tc-min   { width:40px; text-align:right; font-size:10px; color:rgba(255,224,0,.35); }
+
+.tr-best  .tc-name,.tr-best  .tc-avg { color:#4dff91; }
+.tr-best  .tc-bar-f { background:#4dff91; }
+.tr-worst .tc-name,.tr-worst .tc-avg { color:#ff5555; }
+.tr-worst .tc-bar-f { background:#ff5555; }
+.tr-stress .tc-name,.tr-stress .tc-avg { color:#ff9900; }
+.tr-stress .tc-bar-f { background:#ff9900; }
+
+.bdg {
+  font-size:7px; padding:1px 4px; font-weight:bold;
+  vertical-align:middle; margin-left:4px;
+}
+.bdg-best   { background:#4dff91; color:#000; }
+.bdg-worst  { background:#ff5555; color:#fff; }
+.bdg-stress { background:#ff9900; color:#000; }
+</style>
+</head>
+<body>
+
+<!-- HUD live -->
+<div id="hud" class="hide">
+  <div id="hud-stats">
+    <div class="hrow"><span class="hlbl">FPS</span><span class="hval" id="hfps">--</span></div>
+    <div class="hrow"><span class="hlbl">Frame</span><span class="hval" id="hfr">--<span class="hu">ms</span></span></div>
+  </div>
+  <div id="hud-prog">
+    <div id="hp-top">
+      <span id="hp-label">--</span>
+      <div id="hp-right"><span id="hp-cnt">0/0</span><span id="hp-pct">0%</span></div>
+    </div>
+    <div id="hp-track"><div id="hp-fill"></div></div>
+    <div id="hp-dots"></div>
+  </div>
+</div>
+
+<!-- Countdown -->
+<div id="countdown" class="hide">
+  <div class="cd-icons"><span class="cd-icon">⚠️</span><span class="cd-icon">⚠️</span></div>
+  <div id="cd-title">STRESS TEST</div>
+  <div id="cd-sub">TEST FINAL — NE RIEN TOUCHER</div>
+  <div id="cd-num"></div>
+  <div id="cd-warn">RÉSULTATS COMPLETS À L'ISSUE DU TEST</div>
+</div>
+
+<!-- Fenêtre résultats interactive -->
+<div id="win" class="hide">
+
+  <div id="win-title">
+    <span id="win-title-text">BENCHMARK GPU — RÉSULTATS</span>
+    <button id="win-close-btn" onclick="doClose()">✕</button>
+  </div>
+
+  <div id="tabs">
+    <button class="tab active" onclick="goTab(0)">SCORE</button>
+    <button class="tab"        onclick="goTab(1)">COURBE</button>
+    <button class="tab"        onclick="goTab(2)">ANALYSE</button>
+    <button class="tab"        onclick="goTab(3)">DÉTAIL</button>
+  </div>
+
+  <div id="pages">
+
+    <!-- PAGE 1 : Score -->
+    <div class="page active" id="p-score">
+      <div class="score-hero">
+        <div class="big-score" id="sc-num">0</div>
+        <div class="score-side">
+          <div class="rating-big" id="sc-rating">--</div>
+          <div class="rating-lbl">PERFORMANCE GLOBALE</div>
+          <div class="bar-track"><div class="bar-fill" id="sc-bar"></div></div>
+          <div class="bar-marks"><span>LOW</span><span>MED</span><span>HIGH</span><span>ULTRA</span></div>
+        </div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-lbl">FPS MOYEN</div><div class="kpi-val" id="sc-avg">--<span class="kpi-u">fps</span></div></div>
+        <div class="kpi"><div class="kpi-lbl">FPS MINIMUM</div><div class="kpi-val" id="sc-min">--<span class="kpi-u">fps</span></div></div>
+        <div class="kpi"><div class="kpi-lbl">PHASES</div><div class="kpi-val" id="sc-phases">--</div></div>
+      </div>
+      <div class="reco-box">
+        QUALITÉ RECOMMANDÉE
+        <strong id="sc-reco">--</strong>
+      </div>
+    </div>
+
+    <!-- PAGE 2 : Courbe -->
+    <div class="page" id="p-curve">
+      <div class="curve-legend">
+        <div class="cl"><div class="cl-dot" style="background:#FFE000"></div>FPS</div>
+        <div class="cl"><div class="cl-dot" style="background:rgba(255,224,0,.4)"></div>Moyenne</div>
+        <div class="cl"><div class="cl-dot" style="background:#ff5555"></div>Pire</div>
+      </div>
+      <svg id="curve-svg" height="220"></svg>
+    </div>
+
+    <!-- PAGE 3 : Analyse -->
+    <div class="page" id="p-analysis"></div>
+
+    <!-- PAGE 4 : Tableau -->
+    <div class="page" id="p-table">
+      <div class="th">
+        <span class="tc-name">Scène</span>
+        <span class="tc-cond">Conditions</span>
+        <span class="tc-bar-w"></span>
+        <span class="tc-avg">Moy.</span>
+        <span class="tc-min">Min.</span>
+      </div>
+    </div>
+
+  </div><!-- /pages -->
+</div><!-- /win -->
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+let results  = null;
+let curTab   = 0;
+let isDragging = false, isResizing = false;
+let dragOffX = 0, dragOffY = 0;
+
+/* ── MESSAGES LUA ── */
+window.addEventListener('message', ({data}) => {
+  const {action, data:d} = data;
+  if      (action==='show')           onShow(d);
+  else if (action==='phaseStart')     onPhase(d);
+  else if (action==='updateStats')    onStats(d);
+  else if (action==='updateProgress') onProg(d);
+  else if (action==='countdown')      onCountdown(d);
+  else if (action==='showResults')    onResults(d);
+});
+
+/* ── HUD ── */
+function onShow(d) {
+  $('hud').classList.remove('hide');
+  $('hp-fill').style.width='0%'; $('hp-pct').textContent='0%';
+  $('hp-cnt').textContent=`0/${d.totalPhases}`;
+  const dots=$('hp-dots'); dots.innerHTML='';
+  for(let i=0;i<d.totalPhases;i++){
+    const el=document.createElement('div');
+    el.className='hdot'; el.id=`hd${i}`; dots.appendChild(el);
+  }
+}
+function onPhase(d){
+  const lbl=$('hp-label'); lbl.classList.remove('on');
+  setTimeout(()=>{ lbl.textContent=d.label; lbl.classList.add('on'); },50);
+  $('hp-cnt').textContent=`${d.index}/${$('hp-dots').children.length}`;
+  setProg(d.progress);
+  const tot=$('hp-dots').children.length;
+  for(let i=0;i<tot;i++){
+    const dot=$(`hd${i}`); if(!dot) continue;
+    dot.className='hdot';
+    if(i<d.index-1) dot.classList.add('done');
+    else if(i===d.index-1) dot.classList.add('on');
+  }
+}
+function onStats(d){
+  if(d.fps!==undefined)    $('hfps').innerHTML=`${d.fps}<span class="hu">fps</span>`;
+  if(d.frameMs!==undefined) $('hfr').innerHTML=`${d.frameMs}<span class="hu">ms</span>`;
+}
+function onProg(d){ setProg(d.progress); }
+function setProg(pct){
+  const p=Math.min(100,Math.round(pct));
+  $('hp-fill').style.width=p+'%'; $('hp-pct').textContent=p+'%';
+}
+
+/* ── COUNTDOWN ── */
+function onCountdown(d){
+  const cd=$('countdown'), num=$('cd-num');
+  if(d.step==='show'){ cd.classList.remove('hide'); num.textContent=''; }
+  else if(d.step==='hide'){ cd.classList.add('hide'); }
+  else if(d.step==='go'){ num.textContent='GO'; }
+  else{
+    num.textContent=d.step;
+    num.classList.remove('pop');
+    void num.offsetWidth;
+    num.classList.add('pop');
+    setTimeout(()=>num.classList.remove('pop'),250);
+  }
+}
+
+/* ── RÉSULTATS ── */
+function onResults(d){
+  results=d;
+  $('hud').classList.add('hide');
+
+  // Score
+  animVal($('sc-num'),0,d.score,1200);
+  setTimeout(()=>{ $('sc-bar').style.width=d.score+'%'; },200);
+  $('sc-rating').textContent  = d.rating;
+  $('sc-avg').innerHTML       = `${d.avgFPS}<span class="kpi-u">fps</span>`;
+  $('sc-min').innerHTML       = `${d.minFPS}<span class="kpi-u">fps</span>`;
+  $('sc-phases').textContent  = d.phases.length;
+  $('sc-reco').textContent    = d.recommendation.toUpperCase();
+
+  // Analyse
+  buildAnalysis(d.phases);
+
+  // Tableau
+  buildTable(d.phases);
+
+  // Afficher la fenêtre + positionner
+  const win=$('win');
+  win.classList.remove('hide');
+  win.style.left = (window.innerWidth/2 - 340)+'px';
+  win.style.top  = '40px';
+  win.style.transform = 'none';
+
+  // Courbe après rendu (besoin de la taille réelle)
+  setTimeout(()=>buildCurve(d.curve, d.avgFPS), 100);
+}
+
+/* ── TABS ── */
+function goTab(n){
+  curTab=n;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===n));
+  document.querySelectorAll('.page').forEach((p,i)=>p.classList.toggle('active',i===n));
+  if(n===1 && results) setTimeout(()=>buildCurve(results.curve, results.avgFPS),50);
+}
+
+/* ── DRAG ── */
+const win=$('win');
+const titleBar=$('win-title');
+titleBar.addEventListener('mousedown', e=>{
+  if(e.target===$('win-close-btn')) return;
+  isDragging=true;
+  const r=win.getBoundingClientRect();
+  dragOffX=e.clientX-r.left;
+  dragOffY=e.clientY-r.top;
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e=>{
+  if(!isDragging) return;
+  win.style.left=(e.clientX-dragOffX)+'px';
+  win.style.top =(e.clientY-dragOffY)+'px';
+  win.style.transform='none';
+});
+document.addEventListener('mouseup', ()=>{ isDragging=false; });
+
+/* ── ANALYSE ── */
+function buildAnalysis(phases){
+  const normal = phases.filter(p=>!p.label.includes('MEGA'));
+  let best=normal[0], worst=normal[0];
+  const stress=phases.find(p=>p.label.includes('MEGA'));
+  normal.forEach(p=>{ if(p.avg>best.avg) best=p; if(p.avg<worst.avg) worst=p; });
+
+  const cards=[
+    { icon:'✅', lbl:'MEILLEURE CONFIGURATION',
+      val:best.label,
+      det:`${best.avg} FPS moyen · ${best.conditions}\nVotre GPU est à l'aise ici.` },
+    { icon:'⚠️', lbl:'CONFIGURATION LA PLUS LOURDE',
+      val:worst.label,
+      det:`${worst.avg} FPS moyen · ${worst.conditions}\nC'est ici que votre GPU souffre le plus.` },
+    stress ? { icon:'💥', lbl:'STRESS TEST FINAL',
+      val:`${stress.avg} FPS moyen (min. ${stress.min})`,
+      det:`Écart avec la pire scène normale : ${stress.avg-worst.avg>0?'+':''}${stress.avg-worst.avg} FPS.\n${stress.avg<30?'Votre GPU est vraiment mis à rude épreuve.':stress.avg<55?'Performance acceptable sous charge extrême.':'Votre GPU gère très bien le chaos !'}` } : null,
+    { icon:'💡', lbl:'CONSEIL',
+      val: advice(best,worst),
+      det: adviceDet(best,worst,normal) },
+  ].filter(Boolean);
+
+  const cont=$('p-analysis');
+  cont.innerHTML='';
+  cards.forEach(c=>{
+    const el=document.createElement('div');
+    el.className='an-card';
+    el.innerHTML=`<div class="an-top"><span class="an-icon">${c.icon}</span><span class="an-lbl">${c.lbl}</span></div>
+      <div class="an-val">${c.val}</div>
+      <div class="an-det">${c.det.replace(/\n/g,'<br>')}</div>`;
+    cont.appendChild(el);
+  });
+}
+function advice(b,w){ const d=b.avg-w.avg; return d<=5?'Performance homogène':d<=15?'Légère variation selon les zones':'Grandes variations de perf détectées'; }
+function adviceDet(b,w,all){
+  const d=b.avg-w.avg;
+  const lines=[
+    `Meilleure zone : ${b.zone||b.label} (${b.conditions}).`,
+    `Zone difficile : ${w.zone||w.label} (${w.conditions}).`,
+    d>20?'Baissez la densité de trafic et la qualité des ombres.':
+    d>10?'Réduisez la résolution des effets météo pour plus de régularité.':
+    'Votre config est bien équilibrée — tous les réglages sont adaptés.'
+  ];
+  return lines.join('\n');
+}
+
+/* ── TABLEAU ── */
+function buildTable(phases){
+  const normal=phases.filter(p=>!p.label.includes('MEGA'));
+  const maxAvg=Math.max(...normal.map(p=>p.avg),1);
+  const bestAvg=Math.max(...normal.map(p=>p.avg));
+  const worstAvg=Math.min(...normal.map(p=>p.avg));
+  const cont=$('p-table');
+  phases.forEach((p,i)=>{
+    const isStress=p.label.includes('MEGA');
+    const isBest=!isStress&&p.avg===bestAvg;
+    const isWorst=!isStress&&p.avg===worstAvg&&!isBest;
+    const ref=isStress?Math.max(...phases.map(x=>x.avg),1):maxAvg;
+    const barW=Math.round((p.avg/ref)*100);
+    let cls='tr';
+    if(isBest) cls+=' tr-best'; if(isWorst) cls+=' tr-worst'; if(isStress) cls+=' tr-stress';
+    let bdg='';
+    if(isBest)   bdg='<span class="bdg bdg-best">BEST</span>';
+    if(isWorst)  bdg='<span class="bdg bdg-worst">PIRE</span>';
+    if(isStress) bdg='<span class="bdg bdg-stress">STRESS</span>';
+    const row=document.createElement('div');
+    row.className=cls; row.style.animationDelay=(i*55)+'ms';
+    row.innerHTML=`<span class="tc-name">${p.label}${bdg}</span>
+      <span class="tc-cond">${p.conditions||''}</span>
+      <div class="tc-bar-w"><div class="tc-bar"><div class="tc-bar-f" style="width:0%" data-w="${barW}%"></div></div></div>
+      <span class="tc-avg">${p.avg}</span>
+      <span class="tc-min">${p.min}</span>`;
+    cont.appendChild(row);
+    setTimeout(()=>{ const b=row.querySelector('.tc-bar-f'); if(b) b.style.width=b.dataset.w; },350+i*55);
+  });
+}
+
+/* ── COURBE SVG ── */
+function buildCurve(curve, avgFPS){
+  if(!curve||curve.length<2) return;
+  const svg=$('curve-svg');
+  svg.innerHTML='';
+  const W=svg.parentElement.clientWidth-4;
+  const H=220;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('width',W);
+
+  const vals=curve.map(c=>c.v);
+  const maxV=Math.max(...vals,60);
+  const minV=Math.max(0,Math.min(...vals)-5);
+  const range=maxV-minV||1;
+  const PL=32, PR=12, PT=10, PB=20;
+  const toX=i=>(i/(vals.length-1))*(W-PL-PR)+PL;
+  const toY=v=>H-PB-((v-minV)/range)*(H-PT-PB);
+
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,attrs,txt)=>{
+    const el=document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+    if(txt!==undefined) el.textContent=txt;
+    svg.appendChild(el); return el;
+  };
+
+  // Aire
+  let ap=`${toX(0)},${H-PB}`;
+  vals.forEach((v,i)=>ap+=` ${toX(i)},${toY(v)}`);
+  ap+=` ${toX(vals.length-1)},${H-PB}`;
+  mk('polygon',{points:ap,fill:'rgba(255,224,0,.05)'});
+
+  // Grilles Y + labels
+  [0,0.25,0.5,0.75,1].forEach(t=>{
+    const v=minV+t*range;
+    const y=toY(v);
+    mk('line',{x1:PL,x2:W-PR,y1:y,y2:y,stroke:'rgba(255,224,0,.07)','stroke-width':'1'});
+    mk('text',{x:PL-4,y:y+3,fill:'rgba(255,224,0,.28)','font-size':'8','text-anchor':'end'},Math.round(v));
+  });
+
+  // Séparateurs phases
+  let lastP=curve[0].p;
+  curve.forEach((c,i)=>{
+    if(c.p!==lastP){
+      mk('line',{x1:toX(i),x2:toX(i),y1:PT,y2:H-PB,
+        stroke:'rgba(255,224,0,.2)','stroke-width':'1','stroke-dasharray':'2,3'});
+      lastP=c.p;
+    }
+  });
+
+  // Ligne moyenne
+  const ay=toY(avgFPS);
+  mk('line',{x1:PL,x2:W-PR,y1:ay,y2:ay,
+    stroke:'rgba(255,224,0,.38)','stroke-width':'1','stroke-dasharray':'5,4'});
+  mk('text',{x:W-PR,y:ay-4,fill:'rgba(255,224,0,.38)','font-size':'8','text-anchor':'end'},
+    'moy. '+Math.round(avgFPS));
+
+  // Point le plus bas (rouge)
+  const minIdx=vals.indexOf(Math.min(...vals));
+  const wx=toX(minIdx), wy=toY(vals[minIdx]);
+  mk('circle',{cx:wx,cy:wy,r:'5',fill:'rgba(255,85,85,.85)'});
+  mk('text',{x:Math.min(wx+7,W-30),y:Math.max(wy-5,PT+6),
+    fill:'rgba(255,85,85,.85)','font-size':'9'},Math.round(vals[minIdx])+'fps');
+
+  // Polyline FPS
+  const pts=vals.map((v,i)=>`${toX(i)},${toY(v)}`).join(' ');
+  const poly=mk('polyline',{points:pts,fill:'none',stroke:'#FFE000','stroke-width':'1.8','stroke-linejoin':'round'});
+  const L=3500;
+  poly.setAttribute('stroke-dasharray',L);
+  poly.setAttribute('stroke-dashoffset',L);
+  poly.style.transition='stroke-dashoffset 1.8s ease';
+  setTimeout(()=>poly.setAttribute('stroke-dashoffset','0'),100);
+}
+
+function animVal(el,from,to,dur){
+  const t0=performance.now();
+  const tick=now=>{
+    const t=Math.min((now-t0)/dur,1);
+    const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    el.textContent=Math.floor(from+(to-from)*e);
+    if(t<1) requestAnimationFrame(tick); else el.textContent=to;
+  };
+  requestAnimationFrame(tick);
+}
+
+function doClose(){
+  $('win').classList.add('hide');
+  const rn=typeof GetParentResourceName==='function'?GetParentResourceName():'benchmark_gpu';
+  fetch(`https://${rn}/closeBenchmark`,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{});
+}
+</script>
+</body>
+</html>
