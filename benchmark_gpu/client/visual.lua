@@ -24,7 +24,7 @@ function Visual.ClearWeather()
     ClearWeatherTypePersist()
 end
 
--- ── Nettoyage complet de la zone (feu, fumée, particules) ─────────────────
+-- ── Nettoyage complet de la zone (feu, fumée, particules) 
 
 function Visual.CleanArea(center, radius)
     -- Supprime toutes les particules dans le rayon
@@ -33,7 +33,7 @@ function Visual.CleanArea(center, radius)
     StopFireInRange(center.x, center.y, center.z, radius or 80.0)
 end
 
--- ── Props stress ──────────────────────────────────────────────────────────
+-- ── Props stress 
 
 function Visual.SpawnObjects(basePos)
     Visual.CleanupObjects()
@@ -59,7 +59,7 @@ function Visual.CleanupObjects()
     spawnedObjects = {}
 end
 
--- ── Explosions normales ───────────────────────────────────────────────────
+-- ── Explosions normales 
 
 function Visual.SpawnExplosions(positions)
     Citizen.CreateThread(function()
@@ -76,7 +76,7 @@ function Visual.SpawnExplosions(positions)
     end)
 end
 
--- ── MEGA STRESS TEST ──────────────────────────────────────────────────────
+-- ── MEGA STRESS TEST 
 
 function Visual.MegaStressTest(center)
     Citizen.CreateThread(function()
