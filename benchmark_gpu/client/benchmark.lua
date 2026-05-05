@@ -69,7 +69,7 @@ function Benchmark.Run()
         DoScreenFadeOut(Config.fadeDuration)
         Wait(Config.fadeDuration + 150)
 
-        -- ── Reset de la zone précédente ──────────────────────────────────
+        -- ── Reset de la zone précédente
         Camera.Destroy()
         Visual.CleanupObjects()
         Visual.CleanupVehicles()
@@ -79,7 +79,6 @@ function Benchmark.Run()
             Visual.CleanArea(prevPhase.cam1.pos, 100.0)
         end
 
-        -- Téléportation + reset météo complet (efface les flaques ou essaye de les faire disparaître)
         SetEntityCoords(ped, phase.cam1.pos.x, phase.cam1.pos.y, phase.cam1.pos.z, false, false, false, false)
         Visual.SetWeather(phase.weather)   -- reset EXTRASUNNY → target
         Wait(350)
@@ -126,7 +125,7 @@ function Benchmark.Run()
 
     local score, rating, recommendation = calcScore(totalAvg)
 
-    -- ── Restaurer + nettoyage global ─────────────────────────────────────
+    -- ── Restaurer + nettoyage global 
     DoScreenFadeOut(Config.fadeDuration)
     Wait(Config.fadeDuration + 150)
 
@@ -143,7 +142,7 @@ function Benchmark.Run()
     FreezeEntityPosition(ped, false)
     Visual.ClearWeather()
 
-    -- Retour bucket 0 → plus de trace, le joueur est de retour dans le monde normal
+    -- Retour bucket 0
     TriggerServerEvent('benchmark_gpu:leaveInstance')
 
     DoScreenFadeIn(Config.fadeDuration)
